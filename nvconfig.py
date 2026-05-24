@@ -28,6 +28,10 @@ def parse_args():
         help="Fan speed percentage (0-100) – set fan speed"
     )
     parser.add_argument(
+        "--auto", action="store_true",
+        help="Restore automatic/default fan policy"
+    )
+    parser.add_argument(
         "-f", "--fan", type=int, default=0,
         help="Fan index (default: 0). Use -1 to set all fans on the GPU."
     )
@@ -177,6 +181,42 @@ def set_fan_speed(gpu_idx, speed, fan_idx):
         except NVMLError:
             pass
 
+def set_fan_auto(gpu_idx, fan_idx):
+    """Restore automatic/default fan policy on a specific GPU."""
+    try:
+        nvmlInit()
+        device_count = nvmlDeviceGetCount()
+        if gpu_idx >= device_count:
+            print(f"Error: GPU index {gpu_idx} not found. Available GPUs: 0-{device_count-1}", file=sys.stderr)
+            sys.exit(1)
+
+        handle = nvmlDeviceGetHandleByIndex(gpu_idx)
+
+        if fan_idx == -1:
+            try:
+                fan_count = nvmlDeviceGetNumFans(handle)
+            except NVMLError:
+                fan_count = 1
+            for f in range(fan_count):
+                nvmlDeviceSetDefaultFanSpeed_v2(handle, f)
+                print(f"GPU {gpu_idx} fan {f} set back to Auto")
+        else:
+            if fan_idx < 0:
+                print("Error: Fan index must be >= 0 or -1 for all fans", file=sys.stderr)
+                sys.exit(1)
+            nvmlDeviceSetDefaultFanSpeed_v2(handle, fan_idx)
+            print(f"GPU {gpu_idx} fan {fan_idx} set back to Auto")
+
+    except NVMLError as e:
+        print(f"NVML error restoring auto fan policy: {e}", file=sys.stderr)
+        print("Hint: Changing fan policy may require root privileges and coolbits enabled.", file=sys.stderr)
+        sys.exit(1)
+    finally:
+        try:
+            nvmlShutdown()
+        except NVMLError:
+            pass
+
 def set_power_limit(gpu_idx, watt):
     """Set power limit on a specific GPU."""
     try:
@@ -217,8 +257,12 @@ def main():
         list_gpus()
         return
 
+    if args.speed is not None and args.auto:
+        print("Error: --speed and --auto cannot be used together.", file=sys.stderr)
+        sys.exit(1)
+
     if args.gpu is None:
-        print("Error: GPU index (--gpu) is required when setting fan speed or power limit.", file=sys.stderr)
+        print("Error: GPU index (--gpu) is required when setting fan speed, auto fan mode, or power limit.", file=sys.stderr)
         print("Use --list to view available GPUs.", file=sys.stderr)
         sys.exit(1)
 
@@ -228,8 +272,11 @@ def main():
     if args.speed is not None:
         set_fan_speed(args.gpu, args.speed, args.fan)
 
-    if args.power_limit is None and args.speed is None:
-        print("Error: No action specified. Use --speed or --power-limit (or --list).", file=sys.stderr)
+    if args.auto:
+        set_fan_auto(args.gpu, args.fan)
+
+    if args.power_limit is None and args.speed is None and not args.auto:
+        print("Error: No action specified. Use --speed, --auto, or --power-limit (or --list).", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
