@@ -1,4 +1,3 @@
-#!/home/tianye/miniconda3/bin/python
 import argparse
 import sys
 from pynvml import *
